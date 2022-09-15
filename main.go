@@ -22,6 +22,7 @@ func init()  {
 	//p *string, name string, value string, usage string
 	flag.StringVar(&home, "url", "", "root page")
 	flag.IntVar(&MaxDepth, "md", 0, "max depth")
+	flag.Parse()
 	re = regexp.MustCompile(`href="(http.+?)"`)
 }
 func findHrefs(txt string) (hrefs []string)  {
