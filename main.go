@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,12 +17,15 @@ var (
 	visited map[string] bool = make(map[string] bool)
 	mu sync.Mutex
 	home string
+	homeDomain string
+	showHomeHref bool
 )
 
 func init()  {
 	//p *string, name string, value string, usage string
 	flag.StringVar(&home, "url", "", "root page")
 	flag.IntVar(&MaxDepth, "md", 0, "max depth")
+	flag.BoolVar(&showHomeHref, "hr", false, "show home href")
 	flag.Parse()
 	re = regexp.MustCompile(`href="(http.+?)"`)
 }
@@ -42,7 +46,12 @@ func doit(home string, depth int,  c  chan bool)  {
 		<- c
 		log.Printf("...")
 	}()
+
 	resp, err := http.Get(home)
+	dm := findDomain(home)
+	if dm != homeDomain {
+		depth +=1
+	}
 	if err != nil {
 		return
 	}
@@ -53,19 +62,48 @@ func doit(home string, depth int,  c  chan bool)  {
 	}
 	hrefs := findHrefs(string(txt))
 	for _, href := range hrefs {
-		if depth >= MaxDepth {
-			continue
+		dm := findDomain(href)
+		if dm != homeDomain {
+			if depth >= MaxDepth {
+				log.Printf("skiped MaxDepth: %v, %d", href, depth)
+				continue
+			}
 		}
+
+		//slash1 := strings.Index(href, "/")
+		//len := len(href)
+		prefix := href
+		//if slash1 != -1 {
+		//	slash1 += 1
+		//	if slash1 <= len -1 {
+		//		slash2 := strings.Index(href[slash1:], "/")
+		//		if slash2 != -1 {
+		//			slash2 = slash1 + slash2 + 1
+		//			if slash2 <= len -1 {
+		//				slash3 := strings.Index(href[slash2:], "/")
+		//				if slash3 != -1 {
+		//					slash3 = slash2 + slash3 + 1
+		//					prefix = href[:slash3 - 1]
+		//
+		//				}
+		//
+		//
+		//			}
+		//		}
+		//	}
+		//}
+
 		mu.Lock()
-		_, ok := visited[href]
+		_, ok := visited[prefix]
 		mu.Unlock()
 		if  ok {
+			//log.Printf("skiped prefix: %v", prefix)
 			continue
 		}
 		mu.Lock()
-		visited[href] = true
+		visited[prefix] = true
 		mu.Unlock()
-		go doit(href, depth + 1, c)
+		go doit(href, depth, c)
 	}
 }
 
@@ -76,6 +114,8 @@ func main()  {
 	ticker := time.NewTicker(time.Second)
 	done := make(chan bool)
 	process := make(chan bool, 50)
+	homeDomain = findDomain(home)
+	log.Printf("home domain %s", homeDomain)
 	go doit(home, 0, process)
 
 	lastProcess := time.Now().Unix()
@@ -101,8 +141,39 @@ func main()  {
 	}()
 
 	<- done
-
+	log.Printf("======================================")
+	var total = 0
 	for k, _ := range visited {
+		if !showHomeHref && findDomain(k) == homeDomain {
+			continue
+		}
+		total++
 		log.Printf("%s", k)
 	}
+	log.Printf("total :%d", total)
+}
+
+func findDomain(href string) string  {
+	slash1 := strings.Index(href, "/")
+	len := len(href)
+	prefix := href
+	if slash1 != -1 {
+		slash1 += 1
+		if slash1 <= len -1 {
+			slash2 := strings.Index(href[slash1:], "/")
+			if slash2 != -1 {
+				slash2 = slash1 + slash2 + 1
+				if slash2 <= len -1 {
+					slash3 := strings.Index(href[slash2:], "/")
+					if slash3 != -1 {
+						slash3 = slash2 + slash3 + 1
+						prefix = href[:slash3 - 1]
+
+					}
+
+				}
+			}
+		}
+	}
+	return prefix
 }
